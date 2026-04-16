@@ -23,6 +23,23 @@ use tower_lsp::{LspService, Server};
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("alcaparra-lsp {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("alcaparra-lsp {}", env!("CARGO_PKG_VERSION"));
+        println!("Servidor LSP para AlcaparraLang.");
+        println!();
+        println!("USO:");
+        println!("  alcaparra-lsp            Inicia el servidor LSP (stdin/stdout)");
+        println!("  alcaparra-lsp --version  Muestra la versión");
+        return;
+    }
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
