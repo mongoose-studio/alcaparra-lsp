@@ -76,7 +76,7 @@ y provee tooling comparable al de lenguajes modernos.
 
 | Capacidad | Descripción |
 |-----------|-------------|
-| **Diagnósticos** | Errores de sintaxis, variables no declaradas, `MISSING_EMIT`, `DEAD_EMIT`, importaciones no usadas, reasignación de inmutables, redeclaraciones |
+| **Diagnósticos** | Errores de sintaxis, variables no declaradas, `MISSING_EMIT`, `DEAD_EMIT`, importaciones no usadas, reasignación de inmutables, redeclaraciones, **aritmética sobre texto** |
 | **Autocompletado** | Funciones stdlib, variables locales, funciones de usuario, rutas de `use`, variables de contexto |
 | **Hover** | Documentación de stdlib y DocBlocks `///` de funciones de usuario |
 | **Signature Help** | Parámetros de la función activa al escribir argumentos |
@@ -89,6 +89,7 @@ y provee tooling comparable al de lenguajes modernos.
 | **Formateo** | Delega en el formateador de `alcaparra` con soporte de `.capercfg` |
 | **Document Symbols** | Outline del archivo (funciones, variables, constantes) |
 | **Workspace Cache** | Caché de documentos abiertos para respuestas inmediatas |
+| **Revisión por terminal** | `alcaparra-lsp --check archivo.caper` imprime los diagnósticos sin abrir un editor |
 
 ---
 
@@ -191,12 +192,14 @@ La extensión detecta el binario `alcaparra-lsp` en el PATH. Si lo tienes en otr
 
 ### Diagnósticos
 
-El LSP ejecuta tres pasadas de análisis con debounce de 300ms después de cada cambio:
+El LSP ejecuta cinco pasadas de análisis con debounce de 300ms después de cada cambio:
 
 ```
-Interpreter::validate(source)   → errores léxicos y de parse
-Interpreter::lint(source)       → MISSING_EMIT, DEAD_EMIT, NO_RETURN
-scope::check_undefined(source)  → variables/funciones no declaradas
+Interpreter::validate(source)         → errores léxicos y de parse
+Interpreter::lint(source)             → MISSING_EMIT, DEAD_EMIT, NO_RETURN
+scope::check_undefined(source)        → variables/funciones no declaradas
+analysis::check_invalid_imports()     → módulos y aliases inexistentes en `use`
+numeric::check_strict_arithmetic()    → aritmética y comparaciones sobre texto
 ```
 
 **Diagnósticos disponibles:**
@@ -210,8 +213,51 @@ scope::check_undefined(source)  → variables/funciones no declaradas
 | `DEAD_EMIT` | Warning | `emit` inalcanzable (hay otro `emit` antes) |
 | `NO_RETURN` | Warning | Función sin `emit` en al menos una rama |
 | `UNUSED_IMPORT` | Warning | Nombre importado con `use` que no se usa |
+| `INVALID_IMPORT` | Error | `use` de un módulo stdlib inexistente o de un alias no definido en el `.capercfg` |
+| `ARITMETICA_CON_TEXTO` | Error | `-`, `*`, `/`, `%` o `**` sobre algo que se sabe que es texto |
+| `COMPARACION_DE_TIPOS_DISTINTOS` | Error | `<`, `<=`, `>` o `>=` entre texto y número |
+| `SUMA_QUE_CONCATENA` | Warning | `+` donde un lado es texto que parece número: pega los dígitos en vez de sumar |
+| `COMPARACION_SIEMPRE_FALSA` | Warning | `==` o `!=` entre texto y número: da `false` siempre, sin error |
+| `NEGACION_DE_TEXTO` | Warning | `-texto`: los dos motores del lenguaje no coinciden en qué hacer |
 
 El análisis de scope es **conservador**: nunca reporta falsos positivos. Reconoce automáticamente variables de contexto del `.capercfg`, constantes del `header {}`, bindings de `match` (`n if n <= 30`), parámetros de closures, variables de `foreach` y errores de `catch`.
+
+#### Aritmética estricta
+
+Desde **AlcaparraLang v0.2.0** la aritmética no convierte texto: `-`, `*`, `/`, `%` y `**`
+exigen números a ambos lados y cortan con `TYPE_ERROR` en la primera operación. Antes
+convertían en silencio, así que `"1850000" * 26 / 30` daba un número y la primera suma lo
+volvía a concatenar: el resultado salía mal **sin un solo error**.
+
+Eso vuelve visible la falla, pero recién al ejecutar. El servidor la adelanta al editor en
+los casos en que **puede** saber que algo es texto, sin ejecutar nada:
+
+| Lo que ve | Ejemplo |
+|-----------|---------|
+| Un literal | `base * "26"` |
+| Una variable o constante ligada a un literal | `const TASA = "0.07";` … `sueldo * TASA` |
+| Una clave del `context` del `.capercfg` cuyo valor de muestra es texto | `"sueldo_base": "1850000"` … `sueldo_base / 30` |
+| Un alias de esa clave | `let t = TRABAJADOR;` … `t.dias_mes - 2` |
+| Una función de la stdlib que retorna `String` | `to_string(n) * 2`, `date_add(f, 1, "dias") - f` |
+
+Fuera de esos casos **no hay información de tipos y la pasada calla**. No hace inferencia
+entre funciones: en Alcaparra una función solo ve el contexto y las constantes del header,
+no los locales de quien la llama, así que un parámetro es siempre un valor desconocido.
+Es un seguro barato, no un verificador de tipos — y nunca adivina.
+
+El caso que motivó todo esto es el `context` del `.capercfg`: **PostgreSQL serializa
+`numeric` como string** y eso llega intacto hasta el JSON del host. Por eso los valores de
+muestra del `.capercfg` importan y no solo sus claves: si ahí un monto está escrito como
+`"1850000"`, el servidor subraya cada operación que lo toque.
+
+```caper
+// .capercfg → "context": { "TRABAJADOR": { "sueldo_base": "1850000", "dias_mes": 30 } }
+main {
+    let t = TRABAJADOR;
+    emit t.sueldo_base * t.dias_mes / 30;
+    //   ~~~~~~~~~~~~~~ error: `*` exige números a ambos lados …
+}
+```
 
 ### Autocompletado
 
@@ -380,9 +426,13 @@ DocBlock
 
 El LSP detecta automáticamente el `.capercfg` más cercano subiendo desde el directorio del archivo abierto. Extrae:
 
-- **`context`** — variables inyectadas disponibles en los scripts (se excluyen de `UNDEFINED_VARIABLE`)
+- **`context`** — variables inyectadas disponibles en los scripts (se excluyen de `UNDEFINED_VARIABLE`).
+  Los **valores** también se leen, no solo las claves: son la única fuente de tipos que tiene
+  el servidor y con ellos avisa cuando un monto llega como texto (ver *Aritmética estricta*).
+  Conviene que la muestra tenga los mismos tipos que manda el host de verdad.
 - **`paths`** — aliases de ruta para resolver imports externos (`use @formulas.lib`)
 - **`fmt`** — configuración del formateador
+- **`plugins`** y **`dependencies`** — se validan contra el JSON Schema embebido
 
 Ejemplo de `.capercfg` completo:
 
@@ -418,8 +468,9 @@ El LSP provee validación JSON, autocompletado y hover dentro del `.capercfg` a 
 src/
   main.rs           → inicializa tower-lsp, registra módulos
   backend.rs        → todos los handlers LSP (impl LanguageServer)
-  analysis.rs       → orquesta 3 pasadas: validate → lint → scope
+  analysis.rs       → orquesta 5 pasadas: validate → lint → scope → imports → numeric
   scope.rs          → detecta variables/funciones no declaradas
+  numeric.rs        → aritmética y comparaciones sobre texto (lenguaje v0.2.0)
   completion.rs     → autocompletado contextual (use, stdlib, general)
   hover.rs          → hover para stdlib y funciones de usuario
   signature.rs      → signature help al escribir argumentos
@@ -428,12 +479,21 @@ src/
   docblock.rs       → parser de /// DocBlocks
   formatting.rs     → delega en alcaparra::formatter
   semantic.rs       → semantic tokens (11 tipos, delta-encoded)
-  catalog.rs        → catálogo estático de ~120 funciones stdlib
+  catalog.rs        → catálogo estático de 157 funciones stdlib
   workspace.rs      → caché de documentos abiertos
   project_config.rs → lectura de .capercfg + resolución de aliases
 ```
 
 El análisis pesado (parsing, validación) corre en `tokio::task::spawn_blocking` para no bloquear el event loop del LSP. Los diagnósticos tienen debounce de 300ms.
+
+### Dependencia del lenguaje
+
+El servidor usa el crate `alcaparra-lang` para lexer, parser, formateador y catálogo de
+stdlib, **fijado a un tag**:
+
+```toml
+alcaparra = { git = "https://github.com/mongoose-studio/alcaparra-lang", package = "alcaparra-lang", tag = "v0.2.0" }
+```
 
 ---
 
@@ -445,6 +505,12 @@ cargo build
 
 # Build de release (el binario que usa el IDE)
 cargo build --release
+
+# Revisar un archivo desde la terminal (sin editor de por medio)
+cargo run -- --check ruta/al/script.caper
+#   0 → sin errores (puede haber avisos)
+#   1 → hay al menos un error
+#   2 → no se pudo leer el archivo
 
 # Verificar tipos sin compilar
 cargo check

@@ -52,8 +52,20 @@ pub fn check_undefined(source: &str, context_keys: &[String], config: Option<&Pr
 // ── Conjunto de nombres inmutables ────────────────────────────────────────────
 
 /// Recolecta los nombres que NO pueden ser reasignados: `let` y constantes del header.
+///
+/// El scan es plano, igual que el de nombres conocidos, porque el servidor no
+/// modela frames. Para los nombres **conocidos** un set plano solo puede callar
+/// de más, que es lo que queremos; para la inmutabilidad pasa lo contrario:
+/// bastaba un `let partes` en una función para marcar como error el
+/// `partes = ...` de un `var partes` de **otra** función. Por eso todo nombre
+/// que en algún lado se declare con `var` queda fuera del set.
+///
+/// El precio es callar un `let x; x = 1` cuando en otra parte del archivo hay un
+/// `var x`. Es el lado correcto del error: un aviso de menos molesta mucho menos
+/// que un error rojo sobre código que compila y corre.
 fn build_immutable(program: &Program) -> HashSet<String> {
     let mut imm = HashSet::new();
+    let mut mutables = HashSet::new();
 
     // Constantes del header (`const TASA = ...`)
     if let Some(header) = &program.header {
@@ -62,26 +74,38 @@ fn build_immutable(program: &Program) -> HashSet<String> {
         }
     }
 
-    // Variables `let` del cuerpo (flat scan recursivo)
-    collect_immutables(&program.body, &mut imm);
+    // Variables `let` y `var` del cuerpo (flat scan recursivo)
+    collect_immutables(&program.body, &mut imm, &mut mutables);
+
+    imm.retain(|name| !mutables.contains(name));
     imm
 }
 
-fn collect_immutables(stmts: &[Stmt], imm: &mut HashSet<String>) {
+fn collect_immutables(stmts: &[Stmt], imm: &mut HashSet<String>, mutables: &mut HashSet<String>) {
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, .. } => { imm.insert(name.clone()); }
-            Stmt::FnDecl { body, .. } => collect_immutables(body, imm),
-            Stmt::If { then_block, else_if_clauses, else_block, .. } => {
-                collect_immutables(then_block, imm);
-                for (_, b) in else_if_clauses { collect_immutables(b, imm); }
-                if let Some(b) = else_block { collect_immutables(b, imm); }
+            Stmt::Var { name, .. } => { mutables.insert(name.clone()); }
+            // Los parámetros son reasignables dentro de la función.
+            Stmt::FnDecl { params, body, .. } => {
+                for p in params { mutables.insert(p.clone()); }
+                collect_immutables(body, imm, mutables);
             }
-            Stmt::While   { body, .. } => collect_immutables(body, imm),
-            Stmt::Foreach { body, .. } => collect_immutables(body, imm),
-            Stmt::TryCatch { try_block, catch_block, .. } => {
-                collect_immutables(try_block, imm);
-                collect_immutables(catch_block, imm);
+            Stmt::If { then_block, else_if_clauses, else_block, .. } => {
+                collect_immutables(then_block, imm, mutables);
+                for (_, b) in else_if_clauses { collect_immutables(b, imm, mutables); }
+                if let Some(b) = else_block { collect_immutables(b, imm, mutables); }
+            }
+            Stmt::While   { body, .. } => collect_immutables(body, imm, mutables),
+            Stmt::Foreach { key, value, body, .. } => {
+                if let Some(k) = key { mutables.insert(k.clone()); }
+                mutables.insert(value.clone());
+                collect_immutables(body, imm, mutables);
+            }
+            Stmt::TryCatch { try_block, error_var, catch_block, .. } => {
+                mutables.insert(error_var.clone());
+                collect_immutables(try_block, imm, mutables);
+                collect_immutables(catch_block, imm, mutables);
             }
             _ => {}
         }
@@ -609,4 +633,51 @@ pub fn check_unused_imports(source: &str) -> Vec<Diagnostic> {
     }
 
     diags
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn codigos(source: &str) -> Vec<String> {
+        check_undefined(source, &[], None)
+            .iter()
+            .filter_map(|d| match &d.code {
+                Some(NumberOrString::String(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reasignar_un_let_sigue_siendo_error() {
+        let source = "main {\n    let total = 10;\n    total = 20;\n    emit total;\n}";
+        assert_eq!(codigos(source), ["IMMUTABLE_ASSIGN"]);
+    }
+
+    #[test]
+    fn un_let_de_otra_funcion_no_vuelve_inmutable_a_un_var() {
+        // Lo que pasaba en el script real de liquidación: `let partes` en
+        // `reliquidar` marcaba como error el `partes = push(...)` del
+        // `var partes` de `prorratear`.
+        let source = "\
+use std.arrays.{ push };
+fn acumula(n) {
+    var partes = [];
+    partes = push(partes, n);
+    emit partes;
+}
+fn reporta() {
+    let partes = 7;
+    emit partes;
+}
+main { emit acumula(2); }";
+        assert!(codigos(source).is_empty(), "{:?}", codigos(source));
+    }
+
+    #[test]
+    fn reasignar_un_parametro_no_es_error() {
+        let source = "fn f(x) {\n    x = x + 1;\n    emit x;\n}\nmain { emit f(1); }";
+        assert!(codigos(source).is_empty(), "{:?}", codigos(source));
+    }
 }

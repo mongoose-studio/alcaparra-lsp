@@ -2,15 +2,18 @@ use alcaparra::{Interpreter, LintDiagnostic, Severity};
 use alcaparra::lexer::{self, Token};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
+use crate::numeric;
 use crate::project_config::ProjectConfig;
 use crate::scope;
 
 /// Analiza el texto fuente y devuelve diagnósticos LSP.
 ///
-/// Ejecuta tres pasadas:
-/// - `Interpreter::validate` → errores de lex/parse
-/// - `Interpreter::lint`     → advertencias estáticas (MISSING_EMIT, DEAD_EMIT, etc.)
-/// - `scope::check_undefined`→ variables/funciones no declaradas
+/// Ejecuta cinco pasadas:
+/// - `Interpreter::validate`            → errores de lex/parse
+/// - `Interpreter::lint`                → advertencias estáticas (MISSING_EMIT, DEAD_EMIT, etc.)
+/// - `scope::check_undefined`           → variables/funciones no declaradas
+/// - `analysis::check_invalid_imports`  → módulos y aliases inexistentes en `use`
+/// - `numeric::check_strict_arithmetic` → aritmética sobre texto (lenguaje v0.2.0)
 pub fn analyze(source: &str, config: Option<&ProjectConfig>) -> Vec<Diagnostic> {
     let interp = match config {
         Some(cfg) => Interpreter::with_loader(cfg.root.clone(), cfg.aliases.clone()),
@@ -41,6 +44,12 @@ pub fn analyze(source: &str, config: Option<&ProjectConfig>) -> Vec<Diagnostic> 
 
     // Pasada 4: validación de módulos/aliases en sentencias `use`
     diagnostics.extend(check_invalid_imports(source, config));
+
+    // Pasada 5: aritmética estricta — desde el lenguaje v0.2.0 `-`, `*`, `/`, `%`
+    // y `**` no convierten texto. Adelanta al editor el `TYPE_ERROR` que antes
+    // aparecía recién al ejecutar (y que antes de v0.2.0 ni siquiera aparecía:
+    // el resultado salía mal en silencio).
+    diagnostics.extend(numeric::check_strict_arithmetic(source, config));
 
     diagnostics
 }

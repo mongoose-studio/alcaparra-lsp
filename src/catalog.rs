@@ -15,6 +15,18 @@ pub fn lookup(name: &str) -> Option<&'static FnDoc> {
     CATALOG.get_or_init(build).get(name)
 }
 
+/// Devuelve `true` si la funcion stdlib `name` retorna texto.
+///
+/// Lee el tipo de retorno de la firma del catalogo (`"upper(s) -> String"`), que
+/// es la unica fuente de tipos que tiene el servidor. La usa `crate::numeric`
+/// para avisar que `upper(a) * 2` no puede funcionar.
+pub fn returns_string(name: &str) -> bool {
+    lookup(name)
+        .and_then(|e| e.signature.rsplit('\u{2192}').next())
+        .map(|ret| ret.trim() == "String")
+        .unwrap_or(false)
+}
+
 /// Devuelve todos los nombres de función de la stdlib (para completions).
 pub fn all_fn_names() -> impl Iterator<Item = &'static str> {
     alcaparra::stdlib::MODULES

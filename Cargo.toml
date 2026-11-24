@@ -1,6 +1,6 @@
 [package]
 name = "alcaparra-lsp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Language Server Protocol server for AlcaparraLang"
 license = "MIT"
@@ -10,7 +10,7 @@ name = "alcaparra-lsp"
 path = "src/main.rs"
 
 [dependencies]
-alcaparra  = { git = "https://github.com/mongoose-studio/alcaparra-lang", package = "alcaparra-lang" }
+alcaparra  = { git = "https://github.com/mongoose-studio/alcaparra-lang", package = "alcaparra-lang", tag = "v0.2.0" }
 tower-lsp  = "0.20"
 tokio      = { version = "1", features = ["full"] }
 serde_json = "1.0"

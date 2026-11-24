@@ -24,8 +24,8 @@ dependencies = [
 
 [[package]]
 name = "alcaparra-lang"
-version = "0.1.0"
-source = "git+https://github.com/mongoose-studio/alcaparra-lang#f4460ff639e47ac95d5a51ed0e06a986cf6513d7"
+version = "0.2.0"
+source = "git+https://github.com/mongoose-studio/alcaparra-lang?tag=v0.2.0#4c3d9e10d08733f87a51101a1e1087199f203545"
 dependencies = [
  "base64",
  "chrono",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "alcaparra-lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alcaparra-lang",
  "serde_json",

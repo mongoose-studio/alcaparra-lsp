@@ -12,6 +12,14 @@ pub struct ProjectConfig {
     /// Nombres de las variables de contexto declaradas en `context: { ... }`.
     /// Usadas en completions y goto-definition hacia el .capercfg.
     pub context_keys: Vec<String>,
+    /// El bloque `context` completo, con los valores de muestra.
+    ///
+    /// Los valores importan, no solo las claves: desde v0.2.0 la aritmetica no
+    /// convierte texto, asi que un `"sueldo_base": "1850000"` en el .capercfg
+    /// —tal como lo serializa PostgreSQL un `numeric`— convierte en error de
+    /// ejecucion cualquier `sueldo_base * dias` del script. Con la muestra a la
+    /// vista el diagnostico se puede dar en el editor. Ver `crate::numeric`.
+    pub context_sample: serde_json::Value,
     /// Aliases de ruta resueltos para `Interpreter::with_loader`.
     /// Ej: `{ "@formulas" → "/Users/mrojas/proyecto/formulas" }`
     pub aliases: HashMap<String, PathBuf>,
@@ -63,6 +71,6 @@ impl ProjectConfig {
 
         let aliases = cfg.resolved_aliases(&root);
 
-        Some(Self { root, context_keys, aliases })
+        Some(Self { root, context_keys, context_sample: cfg.context, aliases })
     }
 }
