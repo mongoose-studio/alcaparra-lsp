@@ -380,7 +380,7 @@ fn check_expr(expr: &Expr, ctx: &mut Ctx) {
                     ctx.diags.push(diag(
                         ctx.source, *line, &ev.anchor,
                         DiagnosticSeverity::WARNING,
-                        "NEGACION_DE_TEXTO",
+                        "TEXT_DENIAL",
                         format!(
                             "negar texto no está definido: los dos motores de Alcaparra no coinciden. \
                              {} — envuélvelo con `to_number(...)`.",
@@ -439,7 +439,7 @@ fn check_binop(op: &BinOp, left: &Expr, right: &Expr, line: usize, ctx: &mut Ctx
             ctx.diags.push(diag(
                 ctx.source, line, &ev.anchor,
                 DiagnosticSeverity::ERROR,
-                "ARITMETICA_CON_TEXTO",
+                "ARITHMETIC_WITH_TEXT",
                 format!(
                     "`{simbolo}` exige números a ambos lados: la aritmética de Alcaparra no convierte \
                      texto. {} — envuélvelo con `to_number(...)`.",
@@ -463,7 +463,7 @@ fn check_suma(left: &Expr, right: &Expr, line: usize, ctx: &mut Ctx) {
         ctx.diags.push(diag(
             ctx.source, line, &ev.anchor,
             DiagnosticSeverity::WARNING,
-            "SUMA_QUE_CONCATENA",
+            "SUM_THAT_CONCATENATE",
             format!(
                 "`+` concatena cuando un lado es texto: esto pega los dígitos en vez de sumar. \
                  {} y su valor (`{muestra}`) parece un número — envuélvelo con `to_number(...)`.",
@@ -481,7 +481,7 @@ fn check_orden(left: &Expr, right: &Expr, line: usize, ctx: &mut Ctx) {
     ctx.diags.push(diag(
         ctx.source, line, &texto.anchor,
         DiagnosticSeverity::ERROR,
-        "COMPARACION_DE_TIPOS_DISTINTOS",
+        "COMPARISON_OF_DIFFERENT_TYPES",
         format!(
             "no se puede comparar texto con número: {} y el otro lado es numérico ({numero}).              Envuélvelo con `to_number(...)`.",
             texto.reason
@@ -496,7 +496,7 @@ fn check_igualdad(left: &Expr, right: &Expr, line: usize, ctx: &mut Ctx) {
     ctx.diags.push(diag(
         ctx.source, line, &texto.anchor,
         DiagnosticSeverity::WARNING,
-        "COMPARACION_SIEMPRE_FALSA",
+        "COMPARE_ALWAYS_FALSE",
         format!(
             "comparar texto con número da `false` siempre, sin error: {} y el otro lado es              numérico ({numero}). Envuélvelo con `to_number(...)`.",
             texto.reason
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn marca_el_literal_de_texto_en_una_multiplicacion() {
         let diags = check_strict_arithmetic("main { emit \"26\" * 30; }", None);
-        assert_eq!(codigos(&diags), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&diags), ["ARITHMETIC_WITH_TEXT"]);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
     }
 
@@ -769,7 +769,7 @@ mod tests {
             "main {\n  let diario = sueldo_base / 30;\n  emit diario;\n}",
             serde_json::json!({ "sueldo_base": "1850000" }),
         );
-        assert_eq!(codigos(&diags), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&diags), ["ARITHMETIC_WITH_TEXT"]);
         assert!(diags[0].message.contains("sueldo_base"), "{}", diags[0].message);
     }
 
@@ -779,7 +779,7 @@ mod tests {
             "main { emit trabajador.sueldo * 2; }",
             serde_json::json!({ "trabajador": { "sueldo": "1850000", "nombre": "Ana" } }),
         );
-        assert_eq!(codigos(&diags), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&diags), ["ARITHMETIC_WITH_TEXT"]);
     }
 
     #[test]
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn marca_una_funcion_de_stdlib_que_retorna_texto() {
         let diags = check_strict_arithmetic("main { emit to_string(5) * 2; }", None);
-        assert_eq!(codigos(&diags), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&diags), ["ARITHMETIC_WITH_TEXT"]);
     }
 
     #[test]
@@ -806,7 +806,7 @@ mod tests {
     #[test]
     fn marca_la_constante_del_header_ligada_a_texto() {
         let source = "header {\n  const TASA = \"0.07\";\n}\nmain { emit 1000 * TASA; }";
-        assert_eq!(codigos(&check_strict_arithmetic(source, None)), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&check_strict_arithmetic(source, None)), ["ARITHMETIC_WITH_TEXT"]);
     }
 
     #[test]
@@ -824,7 +824,7 @@ mod tests {
             "main { emit sueldo_base + 120000; }",
             serde_json::json!({ "sueldo_base": "1850000" }),
         );
-        assert_eq!(codigos(&diags), ["SUMA_QUE_CONCATENA"]);
+        assert_eq!(codigos(&diags), ["SUM_THAT_CONCATENATE"]);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
     }
 
@@ -852,7 +852,7 @@ mod tests {
     #[test]
     fn negar_texto_es_advertencia_porque_los_motores_no_coinciden() {
         let diags = check_strict_arithmetic("main { emit -\"5\"; }", None);
-        assert_eq!(codigos(&diags), ["NEGACION_DE_TEXTO"]);
+        assert_eq!(codigos(&diags), ["TEXT_DENIAL"]);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
     }
 
@@ -870,7 +870,7 @@ main {
     emit t.dias_mes - 2;
 }";
         let diags = con_contexto(source, serde_json::json!({ "TRABAJADOR": { "dias_mes": "30" } }));
-        assert_eq!(codigos(&diags), ["ARITMETICA_CON_TEXTO"]);
+        assert_eq!(codigos(&diags), ["ARITHMETIC_WITH_TEXT"]);
         assert!(diags[0].message.contains("TRABAJADOR.dias_mes"), "{}", diags[0].message);
     }
 
@@ -895,7 +895,7 @@ main {
             "main { emit if dias > 0 { 1 } else { 0 }; }",
             serde_json::json!({ "dias": "3" }),
         );
-        assert_eq!(codigos(&diags), ["COMPARACION_DE_TIPOS_DISTINTOS"]);
+        assert_eq!(codigos(&diags), ["COMPARISON_OF_DIFFERENT_TYPES"]);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
     }
 
@@ -914,7 +914,7 @@ main {
             "main { emit dias == 30; }",
             serde_json::json!({ "dias": "30" }),
         );
-        assert_eq!(codigos(&diags), ["COMPARACION_SIEMPRE_FALSA"]);
+        assert_eq!(codigos(&diags), ["COMPARE_ALWAYS_FALSE"]);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
     }
 

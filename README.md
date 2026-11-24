@@ -214,11 +214,11 @@ numeric::check_strict_arithmetic()    → aritmética y comparaciones sobre text
 | `NO_RETURN` | Warning | Función sin `emit` en al menos una rama |
 | `UNUSED_IMPORT` | Warning | Nombre importado con `use` que no se usa |
 | `INVALID_IMPORT` | Error | `use` de un módulo stdlib inexistente o de un alias no definido en el `.capercfg` |
-| `ARITMETICA_CON_TEXTO` | Error | `-`, `*`, `/`, `%` o `**` sobre algo que se sabe que es texto |
-| `COMPARACION_DE_TIPOS_DISTINTOS` | Error | `<`, `<=`, `>` o `>=` entre texto y número |
-| `SUMA_QUE_CONCATENA` | Warning | `+` donde un lado es texto que parece número: pega los dígitos en vez de sumar |
-| `COMPARACION_SIEMPRE_FALSA` | Warning | `==` o `!=` entre texto y número: da `false` siempre, sin error |
-| `NEGACION_DE_TEXTO` | Warning | `-texto`: los dos motores del lenguaje no coinciden en qué hacer |
+| `ARITHMETIC_WITH_TEXT` | Error | `-`, `*`, `/`, `%` o `**` sobre algo que se sabe que es texto |
+| `COMPARISON_OF_DIFFERENT_TYPES` | Error | `<`, `<=`, `>` o `>=` entre texto y número |
+| `SUM_THAT_CONCATENATE` | Warning | `+` donde un lado es texto que parece número: pega los dígitos en vez de sumar |
+| `COMPARE_ALWAYS_FALSE` | Warning | `==` o `!=` entre texto y número: da `false` siempre, sin error |
+| `TEXT_DENIAL` | Warning | `-texto`: los dos motores del lenguaje no coinciden en qué hacer |
 
 El análisis de scope es **conservador**: nunca reporta falsos positivos. Reconoce automáticamente variables de contexto del `.capercfg`, constantes del `header {}`, bindings de `match` (`n if n <= 30`), parámetros de closures, variables de `foreach` y errores de `catch`.
 
